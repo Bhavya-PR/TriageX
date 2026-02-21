@@ -1,0 +1,51 @@
+# Ticket 1 - Billing
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T001", "text": "I was charged twice for my subscription this month. Please refund immediately!"}' | python3 -m json.tool
+
+# Ticket 2 - Technical (high urgency)
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T002", "text": "URGENT: Our entire production server is down. Customers cannot access the app. This is critical!"}' | python3 -m json.tool
+
+# Ticket 3 - Legal
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T003", "text": "I want to report a data privacy violation. My personal data was shared without consent."}' | python3 -m json.tool
+
+# Ticket 4 - Technical
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T004", "text": "The login page keeps throwing a 500 error when I try to sign in with Google."}' | python3 -m json.tool
+
+# Ticket 5 - Billing
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T005", "text": "I cancelled my plan last week but I am still being billed. Please stop the charges."}' | python3 -m json.tool
+
+# Ticket 6 - Legal
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T006", "text": "Your terms of service violate GDPR regulations. We need to discuss this immediately."}' | python3 -m json.tool
+
+# Ticket 7 - Technical (low urgency)
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T007", "text": "The dark mode toggle in settings does not seem to save my preference."}' | python3 -m json.tool
+
+# Ticket 8 - Billing (high urgency)
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T008", "text": "EMERGENCY: Unauthorized charges of $500 on my account! Possible fraud, please investigate now!"}' | python3 -m json.tool
+
+# Ticket 9 - Technical
+curl -s -X POST http://127.0.0.1:5000/ticket \
+  -H "Content-Type: application/json" \
+  -d '{"id": "T009", "text": "File uploads are failing silently. No error is shown but files never appear in the dashboard."}' | python3 -m json.tool
+
+
+# Check queue size and top tickets
+curl -s http://127.0.0.1:5000/queue 
+
+# Check health
+curl -s http://127.0.0.1:5000/health 
