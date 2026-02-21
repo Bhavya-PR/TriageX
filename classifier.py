@@ -3,7 +3,9 @@ from transformers import pipeline
 # Load zero-shot classification pipeline once at module level (avoids reloading on every call)
 _classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
 
-CANDIDATE_LABELS = ["Billing", "Technical", "Legal", "General"]
+# "General" is intentionally NOT a candidate — it competes with real labels and lowers accuracy.
+# Instead, General is used as a fallback only when confidence is very low.
+CANDIDATE_LABELS = ["Billing", "Technical", "Legal"]
 
 
 def classify_ticket(text: str) -> str:
@@ -14,8 +16,8 @@ def classify_ticket(text: str) -> str:
     top_label = result["labels"][0]
     top_score = result["scores"][0]
 
-    # If confidence is below threshold, fall back to General
-    if top_score < 0.35:
+    # Fall back to General only if the model has very low confidence in all 3 real categories
+    if top_score < 0.25:
         return "General"
 
     return top_label
