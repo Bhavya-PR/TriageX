@@ -49,7 +49,8 @@ _load()
 def add_ticket(ticket_dict):
     global ticket_counter
     ticket_counter += 1
-    urgency = ticket_dict["urgency_score"]
+    # urgency_score is now {"urgency": float} ∈ [0, 1]
+    urgency = ticket_dict["urgency_score"].get("urgency", 0.0)
     # negate urgency so heapq (min-heap) returns highest urgency first
     heapq.heappush(ticket_queue, (-urgency, ticket_counter, ticket_dict))
     _save()
