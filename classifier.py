@@ -1,24 +1,21 @@
-from config import BILLING_KEYWORDS, TECHNICAL_KEYWORDS, LEGAL_KEYWORDS
+from transformers import pipeline
+
+# Load zero-shot classification pipeline once at module level (avoids reloading on every call)
+_classifier = pipeline("zero-shot-classification", model="facebook/bart-large-mnli")
+
+CANDIDATE_LABELS = ["Billing", "Technical", "Legal", "General"]
 
 
-# Counts keyword matches per category and returns the winning category
-def classify_ticket(text):
-    lowered = text.lower()
-
-    scores = {
-        "Billing": sum(1 for kw in BILLING_KEYWORDS if kw in lowered),
-        "Technical": sum(1 for kw in TECHNICAL_KEYWORDS if kw in lowered),
-        "Legal": sum(1 for kw in LEGAL_KEYWORDS if kw in lowered),
-    }
-
-    top_score = max(scores.values())
-
-    # Fall back to General if nothing matched or multiple categories tied
-    if top_score == 0:
+def classify_ticket(text: str) -> str:
+    if not text or not text.strip():
         return "General"
 
-    winners = [category for category, score in scores.items() if score == top_score]
-    if len(winners) > 1:
+    result = _classifier(text, CANDIDATE_LABELS, multi_label=False)
+    top_label = result["labels"][0]
+    top_score = result["scores"][0]
+
+    # If confidence is below threshold, fall back to General
+    if top_score < 0.35:
         return "General"
 
-    return winners[0]
+    return top_label
