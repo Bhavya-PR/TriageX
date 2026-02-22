@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 
 from queue_manager import add_ticket
 from urgency import is_high_urgency
+from deduplicator import deduplicator
 
 # Load .env so SLACK_WEBHOOK_URL / DISCORD_WEBHOOK_URL are available
 load_dotenv()
@@ -57,13 +58,45 @@ def _send_webhook(ticket_data: dict) -> None:
         log.error("Slack webhook failed: %s", exc)
 
 
+def _send_master_incident_webhook(ticket_data: dict) -> None:
+    """
+    Fire a Master Incident webhook instead of individual alerts during a storm.
+    """
+    url = os.getenv("SLACK_WEBHOOK_URL")
+    if not url: return
+
+    message = (
+        f"🌪️ *MASTER INCIDENT: TICKET STORM DETECTED*\n"
+        f"• *Status*: >10 highly similar tickets (cosine sim > 0.9) in the last 5 minutes.\n"
+        f"• *Cluster Leader Idea*: {ticket_data['text'][:200]}...\n"
+        f"• *Action*: Individual webhook alerts are now SUPPRESSED for this storm."
+    )
+    try:
+        resp = requests.post(url, json={"text": message}, timeout=5)
+        resp.raise_for_status()
+        log.warning("Master Incident webhook sent (status %s)!", resp.status_code)
+    except requests.RequestException as exc:
+        log.error("Master Incident webhook failed: %s", exc)
+
 def process(ticket_data: dict) -> None:
     """Move one ticket from Redis into the in-memory heapq and alert if high-urgency."""
     ticket_data["processed"] = True
     add_ticket(ticket_data)
 
     urgency = ticket_data.get("urgency_score", {}).get("urgency", 0.0)
+    
+    # Check for Ticket Storm using Semantic Deduplication (Milestone 3)
+    storm_status = deduplicator.check_storm(ticket_data["text"])
+    
+    if storm_status == "master":
+        log.error("MASTER INCIDENT TRIGGERED: Deduplicator matched >10 tickets for [%s]", ticket_data["id"])
+        _send_master_incident_webhook(ticket_data)
+        return  # suppress individual webhook
+    elif storm_status == "suppress":
+        log.info("Suppressed webhook for [%s] (part of existing ticket storm cluster).", ticket_data["id"])
+        return  # suppress individual webhook
 
+    # Normal routing
     if urgency > WEBHOOK_THRESHOLD:
         log.warning(
             "HIGH URGENCY (%.2f): [%s] %s",
