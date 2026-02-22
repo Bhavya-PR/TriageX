@@ -1,219 +1,94 @@
 # TriageX 🚀
 
-> **Smart-Support Ticket Routing Engine** — Hackathon submission  
-> _System Design & NLP Track · 48-Hour Implementation_
+> **Smart-Support Ticket Routing Engine** — Hackathon submission
+
+This project implements a high-throughput, intelligent routing engine for support tickets, including ML classification, sentiment-based urgency scoring, async queues (Redis), semantic deduplication for ticket storms, and skill-based agent routing via constraint optimization.
 
 ---
 
-## Architecture
+## How to Run Locally (macOS/Linux)
 
-```
-                        ┌─────────────────────────────────────────┐
-                        │              Client / curl               │
-                        └───────────────────┬─────────────────────┘
-                                            │  POST /ticket
-                                            ▼
-                        ┌─────────────────────────────────────────┐
-  Milestone 1 ──────►  │   FastAPI  (main.py)  — 202 Accepted    │
-  Milestone 2 ──────►  │   ·  zero-shot classify  (BART)         │
-                        │   ·  urgency score S∈[0,1] (RoBERTa)   │
-                        └───────────────────┬─────────────────────┘
-                                            │  LPUSH  (atomic)
-                                            ▼
-                        ┌─────────────────────────────────────────┐
-                        │           Redis  (broker)               │
-                        └───────────────────┬─────────────────────┘
-                                            │  BRPOP (blocking)
-                                            ▼
-                        ┌─────────────────────────────────────────┐
-                        │         worker.py — background          │
-                        │   ·  threading.Lock  →  heapq           │
-                        │   ·  S > 0.8  →  Slack / Discord 🔔    │
-                        └─────────────────────────────────────────┘
-```
+You will need **4 separate terminal windows** to run the full system.
 
----
+### Terminal 1: Start Redis
 
-## Milestones
-
-### Milestone 1 — Minimum Viable Router (MVR)
-
-| Requirement                                    | Implementation                                                     |
-| ---------------------------------------------- | ------------------------------------------------------------------ |
-| Classify tickets → Billing / Technical / Legal | `classifier.py` — HuggingFace `facebook/bart-large-mnli` zero-shot |
-| Regex urgency heuristic (broken, ASAP, …)      | `config.py` — `URGENCY_FLAGS` list                                 |
-| REST API accepting JSON payload                | `main.py` (FastAPI) + `app.py` (Flask fallback)                    |
-| In-memory priority queue (`heapq`)             | `queue_manager.py`                                                 |
-| Single-threaded execution acceptable           | ✅                                                                 |
-
-### Milestone 2 — Intelligent Queue
-
-| Requirement                               | Implementation                                                     |
-| ----------------------------------------- | ------------------------------------------------------------------ |
-| Transformer-based classification          | `classifier.py` — BART zero-shot (same model, M2-grade)            |
-| Regression urgency score S ∈ [0, 1]       | `urgency.py` — `cardiffnlp/twitter-roberta-base-sentiment-latest`  |
-| Async broker (Redis) + 202 Accepted       | `main.py` `LPUSH` → `worker.py` `BRPOP`                            |
-| 10+ simultaneous requests w/ atomic locks | `queue_manager.py` — `threading.Lock` wraps every `heapq` op       |
-| Webhook alert when S > 0.8                | `worker.py` — posts to `SLACK_WEBHOOK_URL` + `DISCORD_WEBHOOK_URL` |
-
----
-
-## Quick Start
-
-### Option A — Docker (recommended)
+Start the Redis broker (requires Redis to be installed, e.g., `brew install redis` on macOS):
 
 ```bash
-# 1. Copy and fill in webhook URLs (optional)
-cp .env.example .env
-# edit .env with your Slack / Discord webhook URLs
-
-# 2. Start everything
-docker compose up --build
+redis-server
 ```
 
-This starts **Redis**, the **FastAPI API** (port 8000), and the **background worker** together.
+_(Leave this running)_
 
----
-
-### Option B — Local (venv)
+### Terminal 2: Start the FastAPI Server
 
 ```bash
-# 1. Create & activate virtual environment
-python3 -m venv venv
-source venv/bin/activate   # Windows: venv\Scripts\activate
+# 1. Activate the virtual environment
+source venv/bin/activate
 
-# 2. Install dependencies
+# 2. Install dependencies (if not already done)
 pip install -r requirements.txt
 
-# 3. Start Redis (requires Docker)
-docker compose up -d redis
-
-# 4. Copy env and configure
-cp .env.example .env
-
-# 5. Start the API
+# 3. Start the API
 uvicorn main:app --host 0.0.0.0 --port 8000
+```
 
-# 6. In a separate terminal — start the worker
+_(Leave this running)_
+
+### Terminal 3: Start the Background Worker
+
+```bash
+source venv/bin/activate
 python worker.py
 ```
 
----
+_(Leave this running — it processes tickets and handles webhook alerts)_
 
-## API Reference
+### Terminal 4: Run the Tests
 
-### `POST /ticket`
-
-Submit a support ticket. Returns **202 Accepted** immediately; classification and queueing happen asynchronously.
-
-**Request body:**
-
-```json
-{ "id": "T001", "text": "My invoice was charged twice — refund ASAP!" }
-```
-
-**Response (202):**
-
-```json
-{
-  "status": "accepted",
-  "ticket_id": "T001",
-  "category": "Billing",
-  "is_high_urgency": true
-}
-```
-
----
-
-### `GET /queue?limit=10`
-
-Peek at the top N tickets sorted by urgency (highest first).
-
----
-
-### `GET /ticket/next`
-
-Pop the single most urgent ticket for an agent to handle.
-
----
-
-### `GET /health`
-
-Returns Redis queue depth and processed heapq size.
-
----
-
-## Testing
-
-### Functional test (10 labelled tickets)
+With the above 3 services running, you can now send traffic to the API:
 
 ```bash
+source venv/bin/activate
+
+# 1. Run the functional test (sends 10 sample tickets and checks accuracy)
 python test_tickets.py
-```
 
-### Concurrency / atomic lock stress test (20 simultaneous requests)
-
-```bash
+# 2. Run the concurrency stress test (fires 20 tickets simultaneously)
 python stress_test.py
 ```
 
-Expected output:
+_(Optional)_ To test **Skill-Based Routing**, push some tickets into the queue and then hit the `/route` endpoint:
 
-- All 20 tickets return **HTTP 202**
-- **"No duplicate IDs — atomic lock working correctly"**
-- Latency stats printed
-
----
-
-## Webhook Alerts
-
-Set either (or both) in `.env`:
-
-```
-SLACK_WEBHOOK_URL=https://hooks.slack.com/services/…
-DISCORD_WEBHOOK_URL=https://discord.com/api/webhooks/…
-```
-
-Whenever the background worker processes a ticket with urgency **S > 0.8**, it posts a formatted alert:
-
-```
-🚨 HIGH-URGENCY TICKET [ID: T001]
-• Category  : Billing
-• Urgency   : 0.91
-• Text      : My invoice was charged twice — refund ASAP!
+```bash
+curl -X POST http://localhost:8000/route?limit=10
 ```
 
 ---
 
-## Project Structure
+## How to Run with Docker (Alternative)
 
+If you prefer to run the entire stack (Redis, API, and Worker) inside Docker containers:
+
+```bash
+# Start all services
+docker compose up --build
 ```
-TriageX/
-├── main.py            ← FastAPI app (Milestone 2 entry point)
-├── app.py             ← Flask app (Milestone 1 fallback)
-├── classifier.py      ← Zero-shot ticket classifier (BART)
-├── urgency.py         ← Sentiment-based urgency scorer (RoBERTa)
-├── queue_manager.py   ← Thread-safe heapq priority queue
-├── worker.py          ← Redis consumer + webhook alerting
-├── config.py          ← Keyword / urgency flag constants
-├── stress_test.py     ← 20-concurrent-request stress test
-├── test_tickets.py    ← 10-ticket functional test suite
-├── Dockerfile
-├── docker-compose.yml
-├── requirements.txt
-└── .env.example
+
+Then, open a new terminal to run the test scripts:
+
+```bash
+source venv/bin/activate
+python test_tickets.py
+python stress_test.py
 ```
 
 ---
 
-## Tech Stack
+## Webhook Alerts (Optional)
 
-| Layer               | Technology                                                     |
-| ------------------- | -------------------------------------------------------------- |
-| API Framework       | FastAPI + Uvicorn                                              |
-| ML — Classification | HuggingFace `facebook/bart-large-mnli` (zero-shot)             |
-| ML — Urgency        | HuggingFace `cardiffnlp/twitter-roberta-base-sentiment-latest` |
-| Async Broker        | Redis (`LPUSH` / `BRPOP`)                                      |
-| Concurrency Safety  | `threading.Lock`                                               |
-| Alert Delivery      | Slack / Discord Incoming Webhooks                              |
-| Containerisation    | Docker + Docker Compose                                        |
+To receive high-urgency ticket alerts via Slack:
+
+1. Copy the environment template: `cp .env.example .env`
+2. Add your Slack Incoming Webhook URL to the `.env` file.
+3. Restart the `worker.py` process.
