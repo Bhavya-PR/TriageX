@@ -2,8 +2,12 @@ from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 from datetime import datetime, timezone
+import os
 import redis
 import json
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from classifier import classify_ticket
 from urgency import score_urgency, is_high_urgency
@@ -11,7 +15,12 @@ from queue_manager import get_next_ticket, peek_queue, get_queue_size
 
 app = FastAPI(title="TriageX", description="Support ticket triage API")
 
-r = redis.Redis(host="localhost", port=6379, db=0, decode_responses=True)
+r = redis.Redis(
+    host=os.getenv("REDIS_HOST", "localhost"),
+    port=int(os.getenv("REDIS_PORT", 6379)),
+    db=0,
+    decode_responses=True,
+)
 
 REDIS_QUEUE_KEY = "ticket_queue"
 

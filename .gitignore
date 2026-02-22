@@ -4,9 +4,11 @@ env/
 .env/
 .venv/
 
-# Environment variables
+# Environment variables (actual secrets — never commit these)
 .env
 *.env
+# Allow the template to be committed
+!.env.example
 
 # Python cache
 __pycache__/

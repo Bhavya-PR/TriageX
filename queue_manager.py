@@ -1,15 +1,20 @@
 import heapq
 import json
 import os
+import threading
 
 QUEUE_FILE = os.path.join(os.path.dirname(__file__), "queue_store.json")
+
+# Atomic lock — ensures no two threads can mutate the heap simultaneously.
+# Required by Milestone 2: "atomic locks to prevent race conditions or duplicate ticket processing"
+_lock = threading.Lock()
 
 ticket_queue = []
 ticket_counter = 0  # used to break ties; older tickets surface first within same urgency
 
 
 def _save():
-    """Persist the current queue to disk."""
+    """Persist the current queue to disk. Must be called while holding _lock."""
     data = {
         "ticket_counter": ticket_counter,
         "tickets": [
@@ -45,33 +50,37 @@ def _load():
 _load()
 
 
-# Adds a ticket to the priority queue, highest urgency pops first
 def add_ticket(ticket_dict):
+    """Adds a ticket to the priority queue. Thread-safe via _lock."""
     global ticket_counter
-    ticket_counter += 1
-    # urgency_score is now {"urgency": float} ∈ [0, 1]
-    urgency = ticket_dict["urgency_score"].get("urgency", 0.0)
-    # negate urgency so heapq (min-heap) returns highest urgency first
-    heapq.heappush(ticket_queue, (-urgency, ticket_counter, ticket_dict))
-    _save()
+    with _lock:
+        ticket_counter += 1
+        # urgency_score is {\"urgency\": float} ∈ [0, 1]
+        urgency = ticket_dict["urgency_score"].get("urgency", 0.0)
+        # negate urgency so heapq (min-heap) returns highest urgency first
+        heapq.heappush(ticket_queue, (-urgency, ticket_counter, ticket_dict))
+        _save()
 
 
-# Removes and returns the most urgent ticket, or None if the queue is empty
 def get_next_ticket():
-    if not ticket_queue:
-        return None
-    _, _, ticket_dict = heapq.heappop(ticket_queue)
-    _save()
-    return ticket_dict
+    """Removes and returns the most urgent ticket. Thread-safe via _lock."""
+    with _lock:
+        if not ticket_queue:
+            return None
+        _, _, ticket_dict = heapq.heappop(ticket_queue)
+        _save()
+        return ticket_dict
 
 
-# Returns a sorted snapshot of up to `limit` tickets without removing them
 def peek_queue(limit=10):
-    # Sort a copy so we don't disturb the underlying heap structure
-    sorted_items = sorted(ticket_queue, key=lambda item: item[0])  # most negative (highest urgency) first
-    return [ticket_dict for _, _, ticket_dict in sorted_items[:limit]]
+    """Returns a sorted snapshot of up to `limit` tickets without removing them. Thread-safe."""
+    with _lock:
+        # Sort a copy so we don't disturb the underlying heap structure
+        sorted_items = sorted(ticket_queue, key=lambda item: item[0])
+        return [ticket_dict for _, _, ticket_dict in sorted_items[:limit]]
 
 
-# Returns the current number of tickets waiting in the queue
 def get_queue_size():
-    return len(ticket_queue)
+    """Returns the current number of tickets waiting in the queue. Thread-safe."""
+    with _lock:
+        return len(ticket_queue)
